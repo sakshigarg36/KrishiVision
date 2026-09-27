@@ -1,0 +1,41 @@
+CREATE TABLE IF NOT EXISTS users (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  display_name VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS fields (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  owner_id BIGINT UNSIGNED NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  crop_type VARCHAR(100),
+  area_hectares DECIMAL(12, 3) CHECK (area_hectares IS NULL OR area_hectares > 0),
+  boundary_geojson JSON,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX fields_owner_id_idx (owner_id),
+  CONSTRAINT fields_owner_id_fk FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS analyses (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  field_id BIGINT UNSIGNED NOT NULL,
+  analysis_type VARCHAR(100) NOT NULL,
+  status VARCHAR(50) NOT NULL DEFAULT 'queued',
+  result JSON,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX analyses_field_id_created_at_idx (field_id, created_at),
+  CONSTRAINT analyses_field_id_fk FOREIGN KEY (field_id) REFERENCES fields(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS alerts (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  field_id BIGINT UNSIGNED NOT NULL,
+  severity VARCHAR(50) NOT NULL,
+  message TEXT NOT NULL,
+  acknowledged_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX alerts_field_id_created_at_idx (field_id, created_at),
+  CONSTRAINT alerts_field_id_fk FOREIGN KEY (field_id) REFERENCES fields(id) ON DELETE CASCADE
+) ENGINE=InnoDB;

@@ -1,0 +1,2 @@
+import { Link } from 'react-router-dom';
+export default function Login() { return <main className="auth-page"><form onSubmit={(event) => event.preventDefault()}><h1>Sign in</h1><label>Email<input type="email" autoComplete="email" required /></label><label>Password<input type="password" autoComplete="current-password" required /></label><button type="submit">Sign in</button><Link to="/register">Create an account</Link></form></main>; }
