@@ -1,18 +1,17 @@
 import numpy as np
 import rasterio
 
+from preprocessing import load_red_nir
 
-def calculate_ndvi(red_path, nir_path, output_path):
-    with rasterio.open(red_path) as red_src:
-        red = red_src.read(1).astype("float32")
-        profile = red_src.profile
 
-    with rasterio.open(nir_path) as nir_src:
-        nir = nir_src.read(1).astype("float32")
+RED_PATH = "satellite/data/bands/B04_10m.jp2"
+NIR_PATH = "satellite/data/bands/B08_10m.jp2"
 
-    if red.shape != nir.shape:
-        raise ValueError("Red and NIR images must have the same shape.")
+NDVI_OUTPUT = "satellite/data/outputs/ndvi.tif"
+HEALTH_OUTPUT = "satellite/data/outputs/health_zones.tif"
 
+
+def calculate_ndvi(red, nir):
     denominator = nir + red
 
     ndvi = np.divide(
@@ -24,16 +23,8 @@ def calculate_ndvi(red_path, nir_path, output_path):
 
     ndvi = np.clip(ndvi, -1.0, 1.0)
 
-    profile.update(
-        dtype="float32",
-        count=1,
-        compress="lzw"
-    )
-
-    with rasterio.open(output_path, "w", **profile) as dst:
-        dst.write(ndvi, 1)
-
     return ndvi
+
 
 def classify_health_zones(ndvi):
     zones = np.zeros(ndvi.shape, dtype=np.uint8)
@@ -44,3 +35,56 @@ def classify_health_zones(ndvi):
     zones[(ndvi >= 0.6) & (ndvi <= 1.0)] = 4
 
     return zones
+
+
+def main():
+    red, nir, profile = load_red_nir(
+        RED_PATH,
+        NIR_PATH
+    )
+
+    ndvi = calculate_ndvi(red, nir)
+    health_zones = classify_health_zones(ndvi)
+
+    ndvi_profile = profile.copy()
+    ndvi_profile.update(driver="GTiff")
+    ndvi_profile.update(
+        dtype="float32",
+        count=1,
+        compress="lzw"
+    )
+
+    with rasterio.open(
+        NDVI_OUTPUT,
+        "w",
+        **ndvi_profile
+    ) as dst:
+        dst.write(ndvi, 1)
+
+    health_profile = profile.copy()
+    health_profile.update(driver="GTiff")
+    health_profile.update(
+        dtype="uint8",
+        count=1,
+        compress="lzw"
+    )
+
+    with rasterio.open(
+        HEALTH_OUTPUT,
+        "w",
+        **health_profile
+    ) as dst:
+        dst.write(health_zones, 1)
+
+    print("=== NDVI Generation Complete ===")
+    print("NDVI shape:", ndvi.shape)
+    print("NDVI min:", ndvi.min())
+    print("NDVI max:", ndvi.max())
+    print("NDVI mean:", ndvi.mean())
+    print("Health zones:", np.unique(health_zones))
+    print("NDVI output:", NDVI_OUTPUT)
+    print("Health zones output:", HEALTH_OUTPUT)
+
+
+if __name__ == "__main__":
+    main()

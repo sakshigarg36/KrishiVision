@@ -1,6 +1,20 @@
 import { Router } from 'express';
-import { notImplemented } from '../controllers/fieldController.js';
+import {
+    createField,
+    getFields,
+    getFieldById,
+    updateField,
+    deleteField
+} from '../controllers/fieldController.js';
+
 const router = Router();
-router.route('/').get(notImplemented).post(notImplemented);
-router.route('/:id').get(notImplemented).put(notImplemented).delete(notImplemented);
+
+router.route('/')
+    .get(getFields)
+    .post(createField);
+router.route('/:id')
+    .get(getFieldById)
+    .put(updateField)
+    .delete(deleteField);
+
 export default router;

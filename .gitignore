@@ -21,3 +21,11 @@ data/weather/*
 !data/weather/.gitkeep
 data/sample/*
 !data/sample/.gitkeep
+# Large satellite source data
+ml-service/satellite/data/bands/*.jp2
+
+# Large generated raster outputs
+ml-service/satellite/data/outputs/*.tif
+
+# ML generated inference outputs
+ml-service/inference/outputs/*.tif
