@@ -1,12 +1,13 @@
+
 import os
 import sys
 import numpy as np
 import torch
+import torch.nn as nn
+
+from torch.utils.data import Dataset, DataLoader, random_split
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
 
 from models.unet import UNet
 
@@ -20,36 +21,79 @@ MODEL_PATH = "models/unet_baseline.pth"
 BATCH_SIZE = 4
 EPOCHS = 3
 LEARNING_RATE = 0.001
+TRAIN_RATIO = 0.8
 
 
 class SegmentationDataset(Dataset):
+
     def __init__(self, image_dir, mask_dir):
+
         self.image_dir = image_dir
         self.mask_dir = mask_dir
 
-        self.files = sorted(
-            [
-                f for f in os.listdir(image_dir)
-                if f.endswith(".npy")
-            ]
-        )
+        self.files = sorted([
+            f for f in os.listdir(image_dir)
+            if f.endswith(".npy")
+        ])
 
     def __len__(self):
         return len(self.files)
 
     def __getitem__(self, index):
+
         filename = self.files[index]
 
-        image_path = os.path.join(self.image_dir, filename)
-        mask_path = os.path.join(self.mask_dir, filename)
+        image = np.load(
+            os.path.join(self.image_dir, filename)
+        ).astype(np.float32)
 
-        image = np.load(image_path).astype(np.float32)
-        mask = np.load(mask_path).astype(np.float32)
+        mask = np.load(
+            os.path.join(self.mask_dir, filename)
+        ).astype(np.float32)
 
         image = torch.from_numpy(image).unsqueeze(0)
         mask = torch.from_numpy(mask).unsqueeze(0)
 
         return image, mask
+
+
+def evaluate(model, loader, criterion, device):
+
+    model.eval()
+
+    total_loss = 0.0
+    tp = fp = fn = tn = 0
+
+    with torch.no_grad():
+
+        for images, masks in loader:
+
+            images = images.to(device)
+            masks = masks.to(device)
+
+            outputs = model(images)
+
+            loss = criterion(outputs, masks)
+            total_loss += loss.item()
+
+            predictions = torch.sigmoid(outputs) >= 0.5
+            targets = masks >= 0.5
+
+            tp += (predictions & targets).sum().item()
+            fp += (predictions & ~targets).sum().item()
+            fn += (~predictions & targets).sum().item()
+            tn += (~predictions & ~targets).sum().item()
+
+    dice = (2 * tp + 1e-7) / (2 * tp + fp + fn + 1e-7)
+    vegetation_iou = (tp + 1e-7) / (tp + fp + fn + 1e-7)
+    nonvegetation_iou = (tn + 1e-7) / (tn + fp + fn + 1e-7)
+
+    return (
+        total_loss / len(loader),
+        dice,
+        vegetation_iou,
+        nonvegetation_iou
+    )
 
 
 def main():
@@ -66,12 +110,31 @@ def main():
         MASK_DIR
     )
 
-    print("Total samples:", len(dataset))
+    total_samples = len(dataset)
+    train_size = int(total_samples * TRAIN_RATIO)
+    val_size = total_samples - train_size
 
-    dataloader = DataLoader(
+    train_dataset, val_dataset = random_split(
         dataset,
+        [train_size, val_size],
+        generator=torch.Generator().manual_seed(42)
+    )
+
+    print("Total samples:", total_samples)
+    print("Training samples:", len(train_dataset))
+    print("Validation samples:", len(val_dataset))
+
+    train_loader = DataLoader(
+        train_dataset,
         batch_size=BATCH_SIZE,
         shuffle=True,
+        num_workers=0
+    )
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=False,
         num_workers=0
     )
 
@@ -87,13 +150,16 @@ def main():
         lr=LEARNING_RATE
     )
 
-    model.train()
+    best_val_loss = float("inf")
+
+    os.makedirs(MODEL_DIR, exist_ok=True)
 
     for epoch in range(EPOCHS):
 
-        total_loss = 0.0
+        model.train()
+        total_train_loss = 0.0
 
-        for images, masks in dataloader:
+        for images, masks in train_loader:
 
             images = images.to(device)
             masks = masks.to(device)
@@ -101,31 +167,43 @@ def main():
             optimizer.zero_grad()
 
             outputs = model(images)
-
             loss = criterion(outputs, masks)
 
             loss.backward()
-
             optimizer.step()
 
-            total_loss += loss.item()
+            total_train_loss += loss.item()
 
-        average_loss = total_loss / len(dataloader)
-
-        print(
-            f"Epoch [{epoch + 1}/{EPOCHS}] "
-            f"Loss: {average_loss:.4f}"
+        average_train_loss = (
+            total_train_loss / len(train_loader)
         )
 
-    os.makedirs(MODEL_DIR, exist_ok=True)
+        val_loss, dice, veg_iou, nonveg_iou = evaluate(
+            model,
+            val_loader,
+            criterion,
+            device
+        )
 
-    torch.save(
-        model.state_dict(),
-        MODEL_PATH
-    )
+        print(f"\nEpoch [{epoch + 1}/{EPOCHS}]")
+        print(f"Training Loss: {average_train_loss:.4f}")
+        print(f"Validation Loss: {val_loss:.4f}")
+        print(f"Vegetation Dice: {dice:.4f}")
+        print(f"Vegetation IoU: {veg_iou:.4f}")
+        print(f"Non-vegetation IoU: {nonveg_iou:.4f}")
 
-    print("=== Training Complete ===")
-    print("Model saved:", MODEL_PATH)
+        if val_loss < best_val_loss:
+
+            best_val_loss = val_loss
+
+            torch.save(
+                model.state_dict(),
+                MODEL_PATH
+            )
+
+            print("Best model saved:", MODEL_PATH)
+
+    print("\n=== Training Complete ===")
 
 
 if __name__ == "__main__":

@@ -1,31 +1,82 @@
-node_modules/
-.env
-!.env.example
-.venv/
-__pycache__/
+
+# ==============================
+# Python Environment
+# ==============================
+ml-service/venv/
+ml-service/.venv/
+ml-service/env/
+ml-service/ENV/
+**/__pycache__/
 *.py[cod]
-.pytest_cache/
+
+# ==============================
+# IDE
+# ==============================
+.idea/
+*.code-workspace
+
+# ==============================
+# Secrets
+# ==============================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ==============================
+# Temporary Files
+# ==============================
+*.log
+*.tmp
+*.bak
 .DS_Store
-.vite/
+Thumbs.db
+
+# ==============================
+# Python Build
+# ==============================
+build/
 dist/
-coverage/
-ml-service/datasets/*
-!ml-service/datasets/.gitkeep
-ml-service/trained_models/*
-!ml-service/trained_models/.gitkeep
-data/satellite/*
-!data/satellite/.gitkeep
-data/disease/*
-!data/disease/.gitkeep
-data/weather/*
-!data/weather/.gitkeep
-data/sample/*
-!data/sample/.gitkeep
-# Large satellite source data
+*.egg-info/
+
+# ==============================
+# Satellite Source Data
+# ==============================
 ml-service/satellite/data/bands/*.jp2
+ml-service/satellite/data/bands/*.JP2
+*.SAFE/
+*.zip
 
-# Large generated raster outputs
-ml-service/satellite/data/outputs/*.tif
+# ==============================
+# Large Generated Raster Outputs
+# ==============================
+ml-service/satellite/data/outputs/ndvi.tif
+ml-service/satellite/data/outputs/combined_gis_health_map.tif
 
-# ML generated inference outputs
-ml-service/inference/outputs/*.tif
+# ==============================
+# Training Dataset
+# ==============================
+ml-service/datasets/segmentation/
+ml-service/datasets/images/
+ml-service/datasets/masks/
+*.npy
+*.npz
+
+# ==============================
+# Generated Temporary Model Files
+# ==============================
+# Keep models/unet_baseline.pth for team inference.
+# Do not ignore all .pth files.
+
+# ==============================
+# Keep Useful PNG Previews
+# ==============================
+# GIS visualization and inference previews are useful
+# for team members, so PNG files are not ignored.
+
+# ==============================
+# Local Test Data
+# ==============================
+ml-service/analysis_test.json
+ml-service/segmentation_test.json
