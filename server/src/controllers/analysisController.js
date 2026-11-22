@@ -1,12 +1,15 @@
 import { pool } from '../config/db.js';
+import { requestMlAnalysis } from '../services/mlService.js';
+import { evaluateAlerts } from '../services/alertService.js';
+
+
 
 export async function createAnalysis(req, res, next) {
+    let analysisId;
+
     try {
-        const {
-            field_id,
-            analysis_type,
-            input_data
-        } = req.body;
+        const { field_id, analysis_type, input_data } = req.body;
+        const uploadedFile = req.file;
 
         if (!field_id || !analysis_type) {
             return res.status(400).json({
@@ -18,13 +21,12 @@ export async function createAnalysis(req, res, next) {
             'NDVI',
             'SEGMENTATION',
             'DISEASE',
-            'YIELD',
-            'FULL_ANALYSIS'
+            'YIELD'
         ];
 
         if (!allowedTypes.includes(analysis_type)) {
             return res.status(400).json({
-                error: 'Invalid analysis_type'
+                error: 'Invalid analysis_type. FULL_ANALYSIS is not supported yet.'
             });
         }
 
@@ -39,31 +41,140 @@ export async function createAnalysis(req, res, next) {
             });
         }
 
-        const [result] = await pool.execute(
+        if (analysis_type === 'DISEASE') {
+            if (!uploadedFile) {
+                return res.status(400).json({
+                    error: 'A crop image file is required for disease detection'
+                });
+            }
+
+            if (!uploadedFile.mimetype?.startsWith('image/')) {
+                return res.status(400).json({
+                    error: 'Please upload a valid image file'
+                });
+            }
+        }
+
+        const [insertResult] = await pool.execute(
             `INSERT INTO analyses
-            (field_id, analysis_type, status, input_data)
-            VALUES (?, ?, 'PENDING', ?)`,
+             (field_id, analysis_type, status, input_data)
+             VALUES (?, ?, 'PENDING', ?)`,
             [
                 field_id,
                 analysis_type,
-                input_data ? JSON.stringify(input_data) : null
+                input_data != null ? JSON.stringify(input_data) : null
             ]
         );
 
-        const [rows] = await pool.execute(
-            'SELECT * FROM analyses WHERE id = ?',
-            [result.insertId]
+        analysisId = insertResult.insertId;
+
+        await pool.execute(
+            "UPDATE analyses SET status = 'PROCESSING' WHERE id = ?",
+            [analysisId]
         );
 
-        res.status(201).json({
-            message: 'Analysis request created successfully',
-            analysis: rows[0]
+        let mlResult;
+
+        try {
+            mlResult = await requestMlAnalysis({
+                analysis_type,
+                input_data: input_data ?? {},
+                file: uploadedFile
+            });
+        } catch (mlError) {
+            await pool.execute(
+                "UPDATE analyses SET status = 'FAILED' WHERE id = ?",
+                [analysisId]
+            );
+
+            const [analyses] = await pool.execute(
+                'SELECT * FROM analyses WHERE id = ?',
+                [analysisId]
+            );
+
+           console.error(
+    `ML analysis failed for analysis ${analysisId}:`,
+    mlError
+);
+
+return res.status(502).json({
+    error: 'ML analysis failed',
+    analysis: analyses[0]
+});
+        }
+
+        const numericValue =
+            analysis_type === 'NDVI' &&
+            typeof mlResult.mean_ndvi === 'number' &&
+            Number.isFinite(mlResult.mean_ndvi)
+                ? mlResult.mean_ndvi
+                : null;
+
+        const [resultInsert] = await pool.execute(
+            `INSERT INTO results
+             (analysis_id, result_type, result_data, numeric_value)
+             VALUES (?, ?, ?, ?)`,
+            [
+                analysisId,
+                analysis_type,
+                JSON.stringify(mlResult),
+                numericValue
+            ]
+        );
+
+        await pool.execute(
+            `UPDATE analyses
+             SET status = 'COMPLETED',
+                 completed_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+            [analysisId]
+        );
+
+        if (analysis_type === 'NDVI') {
+            try {
+                await evaluateAlerts(analysisId);
+            } catch (alertError) {
+                console.error(
+                    `Alert evaluation failed for analysis ${analysisId}:`,
+                    alertError.message
+                );
+            }
+        }
+
+        const [results] = await pool.execute(
+            'SELECT * FROM results WHERE id = ?',
+            [resultInsert.insertId]
+        );
+
+        const [analyses] = await pool.execute(
+            'SELECT * FROM analyses WHERE id = ?',
+            [analysisId]
+        );
+
+        return res.status(201).json({
+            message: 'Analysis completed successfully',
+            analysis: analyses[0],
+            result: results[0]
         });
 
     } catch (error) {
+        if (analysisId !== undefined) {
+            try {
+                await pool.execute(
+                    "UPDATE analyses SET status = 'FAILED' WHERE id = ?",
+                    [analysisId]
+                );
+            } catch {
+                // Preserve the original error if status update also fails.
+            }
+        }
+
         next(error);
     }
 }
+
+
+
 
 export async function getAnalyses(req, res, next) {
     try {
@@ -126,13 +237,12 @@ export async function updateAnalysis(req, res, next) {
             completed_at
         } = req.body;
 
-        const allowedTypes = [
-            'NDVI',
-            'SEGMENTATION',
-            'DISEASE',
-            'YIELD',
-            'FULL_ANALYSIS'
-        ];
+       const allowedTypes = [
+    'NDVI',
+    'SEGMENTATION',
+    'DISEASE',
+    'YIELD'
+];
 
         const allowedStatuses = [
             'PENDING',
