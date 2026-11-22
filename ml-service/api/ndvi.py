@@ -1,4 +1,7 @@
 
+import numpy as np
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 import numpy as np
@@ -14,43 +17,29 @@ class NDVIRequest(BaseModel):
 
 
 @router.post("/compute")
-def calculate_ndvi(request: NDVIRequest):
+def compute_ndvi_endpoint(request: NDVIRequest):
     try:
         red = np.asarray(request.red, dtype=np.float32)
         nir = np.asarray(request.near_infrared, dtype=np.float32)
 
         if red.ndim != 2 or nir.ndim != 2:
-            raise HTTPException(
-                status_code=422,
-                detail="Red and NIR must be two-dimensional arrays."
-            )
+            raise ValueError("Red and NIR must be 2D arrays.")
 
         if red.shape != nir.shape:
-            raise HTTPException(
-                status_code=422,
-                detail="Red and NIR arrays must have the same shape."
-            )
+            raise ValueError("Red and NIR arrays must have the same dimensions.")
 
         if red.size == 0:
-            raise HTTPException(
-                status_code=422,
-                detail="Input arrays cannot be empty."
-            )
+            raise ValueError("Input arrays cannot be empty.")
 
         if not np.isfinite(red).all() or not np.isfinite(nir).all():
-            raise HTTPException(
-                status_code=422,
-                detail="Input arrays contain invalid numeric values."
-            )
+            raise ValueError("Band values must be finite numbers.")
 
         if np.any(red < 0) or np.any(nir < 0):
-            raise HTTPException(
-                status_code=422,
-                detail="Red and NIR reflectance values cannot be negative."
-            )
+            raise ValueError("Reflectance values cannot be negative.")
 
-        ndvi = compute_ndvi(red, nir)
-        ndvi = np.clip(ndvi, -1.0, 1.0)
+        ndvi = np.clip(compute_ndvi(red, nir), -1.0, 1.0)
+
+        mean_ndvi = float(np.mean(ndvi))
 
         zones = np.zeros(ndvi.shape, dtype=np.uint8)
         zones[(ndvi >= 0.0) & (ndvi < 0.2)] = 1
@@ -59,25 +48,27 @@ def calculate_ndvi(request: NDVIRequest):
         zones[(ndvi >= 0.6) & (ndvi <= 1.0)] = 4
 
         return {
+            "analysis_type": "NDVI",
             "status": "success",
-            "height": int(ndvi.shape[0]),
-            "width": int(ndvi.shape[1]),
+            "mean_ndvi": round(mean_ndvi, 4),
+            "min_ndvi": round(float(np.min(ndvi)), 4),
+            "max_ndvi": round(float(np.max(ndvi)), 4),
             "ndvi": ndvi.tolist(),
+            "health_status": (
+                "Healthy" if mean_ndvi >= 0.3 else "Potential stress"
+            ),
             "health_zones": zones.tolist(),
             "statistics": {
-                "min": float(ndvi.min()),
-                "max": float(ndvi.max()),
-                "mean": float(ndvi.mean())
+                "min": float(np.min(ndvi)),
+                "max": float(np.max(ndvi)),
+                "mean": mean_ndvi
             },
             "zone_classes": [
                 int(value) for value in np.unique(zones)
-            ]
+            ],
+            "note": "Demonstration calculation using supplied band values; not verified satellite imagery."
         }
 
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"NDVI calculation failed: {str(exc)}"
-        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+        

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { upload } from '../middleware/uploadMiddleware.js';
 
 import {
     createAnalysis,
@@ -14,6 +15,9 @@ const router = Router();
 router.route('/')
     .get(getAnalyses)
     .post(createAnalysis);
+
+// Disease detection with image upload
+router.post('/disease', upload.single('file'), createAnalysis);
 
 // Get / Update / Delete single analysis
 router.route('/:id')

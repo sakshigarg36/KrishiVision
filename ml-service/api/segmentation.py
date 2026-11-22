@@ -69,3 +69,4 @@ def segment_field(request: SegmentationRequest):
             status_code=500,
             detail=f"Segmentation failed: {str(exc)}"
         )
+        )

@@ -1,12 +1,2 @@
-﻿-r requirements.txt
-
-# Deep Learning - Disease Classification
-torch>=2.9,<3.0
-torchvision>=0.24,<1.0
-Pillow>=11,<13
-
-# Data Processing and Machine Learning - Yield Prediction
-pandas>=3.0,<4.0
-scikit-learn>=1.9,<2.0
-joblib>=1.6,<2.0
-xgboost>=3.4,<4.0
+# Install all ML service and training dependencies
+-r requirements.txt

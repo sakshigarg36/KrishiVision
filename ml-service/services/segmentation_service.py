@@ -1,4 +1,3 @@
-
 import os
 import numpy as np
 import torch
@@ -23,9 +22,11 @@ def get_model():
             )
 
         _model = UNet(in_channels=1, out_channels=1).to(DEVICE)
+
         _model.load_state_dict(
             torch.load(MODEL_PATH, map_location=DEVICE)
         )
+
         _model.eval()
 
     return _model
@@ -39,7 +40,8 @@ def segment(image):
 
     if image.size == 0:
         raise ValueError("Input image cannot be empty.")
-
+    if not np.isfinite(image).all():
+        raise ValueError("Input image must contain only finite values.")
     model = get_model()
 
     input_tensor = (
