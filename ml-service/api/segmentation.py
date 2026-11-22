@@ -1,3 +1,4 @@
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 import numpy as np
@@ -67,4 +68,5 @@ def segment_field(request: SegmentationRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Segmentation failed: {str(exc)}"
+        )
         )
